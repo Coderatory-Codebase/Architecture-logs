@@ -481,3 +481,74 @@ Logout clears server-side credentials and removes the frontend session state.
 ![Diagram](<Blog Architecture Documentation Complete User Flows.assets/image9.png>)
 
 *Figure 9. Lo**gout flow.*
+
+## Architecture Decisions and Operational Rules
+
+This section resolves the important architecture questions identified during review. It distinguishes the current behavior from planned production improvements so that the README does not claim unimplemented features.
+
+### 1. Blog Visibility and Ownership Policy
+
+Published blogs are public. Visitors can browse the blog list and open a published article whether they are logged in or logged out. Logging in does not reduce a reader's access.
+
+Only authenticated users can create a blog. Only the blog's author can edit or delete it. The frontend may hide unavailable actions, but the backend is the authoritative enforcement point and verifies ownership from the authenticated identity.
+
+| Action | Logged-out visitor | Logged-in non-owner | Blog author |
+| --- | --- | --- | --- |
+| View all published blogs | Allowed | Allowed | Allowed |
+| View one published blog | Allowed | Allowed | Allowed |
+| Create a blog | Not allowed | Allowed | Allowed |
+| Edit a blog | Not allowed | Not allowed | Allowed |
+| Delete a blog | Not allowed | Not allowed | Allowed |
+
+### 2. Cookie and CSRF Security Policy
+
+The application uses HTTP-only cookies for authentication. HTTP-only cookies protect token confidentiality in browser JavaScript, but they are not, by themselves, a defense against cross-site request forgery (CSRF).
+
+For a production deployment, state-changing requests such as creating, updating, deleting, and logging out must be protected by an explicit browser trust-boundary control: appropriate `SameSite` and `Secure` cookie settings, plus either `Origin`/`Referer` validation or a CSRF-token mechanism. This control and its negative security tests are planned production work; it is not claimed as implemented by this README.
+
+```text
+Trusted BaseBlog frontend ── authenticated write ──► Express API
+                                                     │
+                                                     ├─ validate cookie/session
+                                                     └─ validate request origin or CSRF token
+
+Untrusted third-party site ── forged browser write ─► rejected
+```
+
+### 3. Blog View-Count Policy
+
+In the current basic project, a view is counted when the public article endpoint is requested. This is a request counter, not a unique-reader metric: refreshes, bots, retries, and repeat visits can increase it.
+
+The counter should use an atomic database increment so concurrent reads do not overwrite one another. A future version may define unique-view behavior, for example one counted view per authenticated user or visitor session within a selected time interval.
+
+### 4. API Contract Rules
+
+The backend owns the API contract and frontend TypeScript types must follow it. Each endpoint should document:
+
+- HTTP method and route
+- Authentication and ownership requirement
+- Request body and validation rules
+- Success response structure
+- Error response structure and status codes
+- Pagination and filtering behavior where applicable
+
+The current route inventory is an overview. Publishing a versioned OpenAPI or Swagger specification is a future improvement for independent client development and contract testing.
+
+### 5. Deployment and Recovery Plan
+
+This repository is currently designed for local development and learning. Before a production deployment, the following operational practices must be defined and tested:
+
+- Environment-variable and secret-management process
+- Backend health and readiness checks
+- MongoDB backup and restore procedure
+- Database migration procedure
+- Deployment rollback procedure
+- Error logging, alerting, and ownership of incident response
+
+These are planned production requirements, not guarantees currently provided by the local development setup.
+
+### 6. Refresh-Token Lifecycle
+
+The current authentication flow stores refresh tokens and invalidates the stored refresh token on logout. Expired or revoked refresh tokens must not issue a new access token.
+
+A production-strength lifecycle should additionally define refresh-token expiry, rotation on refresh, reuse detection, device-specific logout, logout from all devices, compromised-token revocation, and the response returned when refresh fails. These lifecycle details and their security tests are planned improvements unless implemented in the backend configuration and services.
